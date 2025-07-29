@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { ProductManager } from '../managers/ProductManager.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const router = Router();
-const productManager = new ProductManager('src/data/products.json');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const productManager = new ProductManager(path.join(__dirname, '../data/products.json'));
 
 // GET /api/products/
 router.get('/', async (req, res) => {
@@ -30,20 +34,23 @@ router.get('/:pid', async (req, res) => {
 
 // POST /api/products/
 router.post('/', async (req, res) => {
-    // Validaciones básicas
     const { title, description, code, price, stock, category } = req.body;
     if (!title || !description || !code || price === undefined || stock === undefined || !category) {
         return res.status(400).send('Todos los campos son obligatorios, excepto thumbnails');
     }
     try {
         const newProduct = await productManager.addProduct(req.body);
+        
+        // --- EMISIÓN DE SOCKET ---
+        const products = await productManager.getProducts();
+        req.io.emit('updateProducts', products);
+
         res.status(201).json(newProduct);
     } catch (error) {
         res.status(500).send('Error al agregar el producto');
     }
 });
 
-// --- RUTAS NUEVAS ---
 // PUT /api/products/:pid
 router.put('/:pid', async (req, res) => {
     try {
@@ -63,6 +70,10 @@ router.delete('/:pid', async (req, res) => {
     try {
         const success = await productManager.deleteProduct(req.params.pid);
         if (success) {
+            // --- EMISIÓN DE SOCKET ---
+            const products = await productManager.getProducts();
+            req.io.emit('updateProducts', products);
+
             res.status(200).send('Producto eliminado correctamente');
         } else {
             res.status(404).send('Producto no encontrado para eliminar');
